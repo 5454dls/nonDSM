@@ -255,7 +255,7 @@ def codebook():
 if __name__ == "__main__":
     OUT.mkdir(exist_ok=True)
     df = build()
-    df.to_csv(OUT / "synthetic_chief_problems.csv", index=False, encoding="utf-8")
-    codebook().to_csv(OUT / "codebook.csv", index=False, encoding="utf-8")
+    df.to_csv(OUT / "synthetic_chief_problems.csv", index=False, encoding="utf-8-sig")
+    codebook().to_csv(OUT / "codebook.csv", index=False, encoding="utf-8-sig")
     key = df.dx1 + "|" + df.dx2 + "|" + df.dx3
     print(len(df), "sentences;", int((key != key.shift()).sum()), "patients")
