@@ -1,5 +1,5 @@
 {
- "source": "projects/non-DSM/analysis/code_dict.py DOMAIN_RANGES / domain_of",
+ "source": "codebook domains of the study",
  "n_items": 101,
  "domains": [
   {
@@ -217,7 +217,7 @@
    ]
   },
   {
-   "codebook_name": "Others (stress/medication/기타)",
+   "codebook_name": "Others (stress/medication/other)",
    "label": "Other (stress, medication)",
    "codes": [
     105

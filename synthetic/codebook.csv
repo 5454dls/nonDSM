@@ -1,0 +1,106 @@
+code,domain,item
+1,Psychotic,Delusion
+2,Psychotic,Hallucination
+3,Psychotic,Disorganized speech
+4,Psychotic,Disorganized behavior
+5,Psychotic,Negative symptom
+6,Psychotic,Stupor
+7,Psychotic,Catalepsy
+8,Psychotic,Mutism
+9,Psychotic,Posturing
+10,Manic,Inflated self-esteem or grandiosity
+11,Manic,"Elevated, expansive, or irritable mood"
+12,Manic,Increased goal-directed activity or energy
+13,Manic,Decreased need for sleep
+14,Manic,More talkative
+15,Manic,Flight of ideas / thought racing
+16,Manic,Distractibility
+17,Manic,Excessive involvement in high-risk activities
+18,Obsessive-Compulsive,Obsession
+19,Obsessive-Compulsive,Compulsion
+20,Depressive,Depressed mood
+21,Depressive,Markedly diminished interest or pleasure
+22,Depressive,Significant weight/appetite change
+23,Depressive,Psychomotor agitation or retardation
+24,Depressive,Fatigue or loss of energy
+25,Depressive,Feeling of worthlessness or excessive/inappropriate guilt
+26,Depressive,"Diminished ability to think or concentrate, or indecisiveness"
+27,Depressive,Low self-esteem
+28,Depressive,Feeling of hopelessness
+29,Anxiety,Marked fear about specific object/situation
+30,Anxiety,Phobic object/situation actively avoided
+31,Anxiety,Marked fear about social situation
+32,Anxiety,"Palpitation, pounding heart, accelerated heart rate"
+33,Anxiety,Shortness of breath or smothering
+34,Anxiety,Feeling of choking
+35,Anxiety,Fear of losing control or going crazy
+36,Anxiety,Fear of dying
+37,Anxiety,Persistent concern about additional panic attacks
+38,Anxiety,Significant maladaptive behavior change related to attacks
+39,Anxiety,Excessive anxiety and worry
+40,Anxiety,Difficult to control the worry
+41,Behavioral,Severe recurrent temper outburst
+42,Behavioral,Irritability
+43,Trauma,Recurrent intrusive distressing memories of traumatic event
+44,Trauma,Dissociative reactions (flashbacks)
+45,Trauma,Avoidance of distressing memories/thoughts/feelings
+46,Trauma,Avoidance of external reminders
+47,Trauma,Inability to remember important aspect of traumatic event
+48,Trauma,Hyperarousal
+49,Illness anxiety,Preoccupation with having or acquiring serious illness
+50,Somatic,Sweating
+51,Somatic,Trembling or shaking
+52,Somatic,Chest pain or discomfort
+53,Somatic,Nausea or abdominal distress
+54,Somatic,"Feeling dizzy, unsteady, light-headed, or faint"
+55,Somatic,Chills or heat sensations
+56,Somatic,Paresthesias
+57,Somatic,Muscle tension
+58,Somatic symptoms disorder,Somatic symptoms causing disruption of daily life
+59,Somatic symptoms disorder,Excessive thoughts/feelings about somatic symptoms
+60,Conversion and dissociative,Altered voluntary motor or sensory function
+61,Conversion and dissociative,Derealization or depersonalization
+62,Sleep,Sleep disturbance
+63,Sleep,Recurrent distressing dreams
+64,Sleep,Difficulty initiating sleep
+65,Sleep,Difficulty maintaining sleep
+66,Sleep,Early morning wake
+67,Sleep,Excessive sleepiness
+68,Eating,Restriction of energy intake
+69,Eating,Intense fear of gaining weight
+70,Eating,Persistent lack of recognition of low body weight
+71,Eating,Binge eating
+72,Alcohol use,Alcohol taken in larger amounts/longer period
+73,Alcohol use,Persistent desire to cut down alcohol
+74,Alcohol use,Time spent to obtain/use alcohol
+75,Alcohol use,Alcohol craving
+76,Alcohol use,Recurrent alcohol use in hazardous situations
+77,Alcohol use,Alcohol tolerance
+78,Alcohol use,Alcohol withdrawal
+79,Alcohol use,Alcohol use failing role obligations
+80,Substance use,Substance taken in larger amounts/longer period
+81,Substance use,Persistent desire to cut down substance
+82,Substance use,Time spent to obtain/use substance
+83,Substance use,Substance craving
+84,Substance use,Recurrent substance use in hazardous situations
+85,Substance use,Substance tolerance
+86,Substance use,Substance withdrawal
+87,Substance use,Substance use failing role obligations
+88,Cognition,Cognitive decline - memory/disorientation
+89,Cognition,Cognitive decline - attention
+90,Cognition,Cognitive decline - executive function
+91,Cognition,Cognitive decline - language
+92,Cognition,Cognitive decline - visuospatial function
+93,Cognition,Cognitive decline - social cognition
+94,Cognition,Disturbance develops over short period
+95,Cognition,Tends to fluctuate in severity during day
+96,Personality,Enduring pattern - cognition
+97,Personality,Enduring pattern - affectivity
+98,Personality,Enduring pattern - interpersonal functioning
+99,Personality,Enduring pattern - impulse control
+100,Suicidality,Suicidal ideation/attempt/plan
+101,Movement,Abnormal contraction of muscles
+102,Movement,Restlessness with excessive movements
+103,Movement,Involuntary or choreiform movements
+104,Others (stress/medication),Stress-related
+105,Others (stress/medication),Medication-related

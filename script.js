@@ -1,270 +1,259 @@
 "use strict";
 
-// Direct browser port of app.py. Does NOT fit a model or send selected symptoms to a server.
-// Reference: model_all_groups.json / item_domains.json (identical to the Python inputs).
+// Static research tool. Reads model_all_groups.json and item_domains.json from the same
+// folder and computes in the browser; nothing is sent anywhere and nothing is fitted here.
+// Per group: logistic score over all items, then the seven group scores are normalised to sum to 1.
+
 const MIN_ITEMS = 3;
 const MAX_ITEMS = 10;
 const OTHER_KEY = "Other";
-const CITATION = "[OO]"; // Replace with the manuscript citation after acceptance.
+const AXIS_TICKS = [0, 50, 100];
+const GRID_TICKS = [25, 50, 75];
 const OTHER_NOTE =
-  "Other diagnoses includes: personality disorders, neurocognitive disorders, " +
-  "dementia, and substance- or alcohol-related diagnoses, among diagnoses that do " +
-  "not match the other six groups' keywords (n = %d in the training set).";
-const HINT = '<p class="hint">Select chief problems, then press Compute.</p>';
+  "Other diagnoses include: personality disorders, neurocognitive disorders, dementia, and " +
+  "substance- or alcohol-related diagnoses, among diagnoses that do not match the other six " +
+  "groups' keywords (n = %d in the training set).";
+const HINT = `<p class="hint">Select ${MIN_ITEMS} to ${MAX_ITEMS} chief problems, then press Compute.</p>`;
 
-let model;
-let domains;
-let names;
-
-const escapeHTML = (value) => String(value).replace(/[&<>"']/g, (char) => ({
+const escapeHTML = (value) => String(value).replace(/[&<>"']/g, (ch) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
-})[char]);
+})[ch]);
 const pct = (x) => (100 * x).toFixed(1) + "%";
 
-function buildDomains(data, domainData) {
-  if (!Array.isArray(data.items) || !Array.isArray(data.classes) || !Array.isArray(domainData.domains)) {
-    throw new Error("The model or domain JSON has an unexpected structure.");
-  }
-  const codeToName = new Map(data.items.map((it) => [it.code, it.name]));
-  const built = domainData.domains.map((entry) => ({
-    label: entry.label,
-    names: entry.codes.map((code) => {
-      if (!codeToName.has(code)) throw new Error("Unknown item code: " + code);
+// ---------------------------------------------------------------- model
+function buildDomains(model, domainData) {
+  const codeToName = new Map(model.items.map((it) => [it.code, it.name]));
+  const domains = domainData.domains.map((d) => ({
+    label: d.label,
+    names: d.codes.map((code) => {
+      if (!codeToName.has(code)) throw new Error("Unknown item code " + code);
       return codeToName.get(code);
     })
   }));
-  const assigned = built.flatMap((entry) => entry.names);
-  if (assigned.length !== data.items.length || new Set(assigned).size !== data.items.length ||
-      data.items.some((it) => !assigned.includes(it.name))) {
-    throw new Error("The item domains do not match the model items.");
+  const assigned = domains.flatMap((d) => d.names);
+  if (assigned.length !== model.items.length || new Set(assigned).size !== model.items.length) {
+    throw new Error("Item domains and model items differ.");
   }
-  if (new Set(data.items.map((it) => it.name)).size !== data.items.length) {
-    throw new Error("Duplicate item name in the model.");
+  for (const c of model.classes) {
+    if (model.coef[c].length !== model.items.length) throw new Error("Coefficient length differs for " + c);
   }
-  for (const c of data.classes) {
-    if (!Array.isArray(data.coef?.[c]) || data.coef[c].length !== data.items.length ||
-        !Number.isFinite(data.intercept?.[c]) || !Number.isFinite(data.performance?.[c]?.cutoff)) {
-      throw new Error("Incomplete model coefficients for " + c);
-    }
-  }
-  return built;
+  return domains;
 }
 
-// Match app.py _probs: for each group, dot product over ALL items in model order,
-// followed by logistic sigmoid, then normalisation of the seven group scores.
-function calculateProbabilities(data, selectedNames) {
-  const inputSet = new Set(selectedNames);
-  const x = data.items.map((it) => inputSet.has(it.name) ? 1.0 : 0.0);
+function probabilities(model, picked) {
+  const chosen = new Set(picked);
+  const x = model.items.map((it) => (chosen.has(it.name) ? 1.0 : 0.0));
   const raw = {};
-  for (const c of data.classes) {
-    let z = data.intercept[c];
-    // A left-to-right sum (as in Python's sum()) limits floating-point differences.
+  for (const c of model.classes) {
     let dot = 0.0;
-    for (let i = 0; i < x.length; i++) dot += data.coef[c][i] * x[i];
-    z += dot;
-    raw[c] = 1.0 / (1.0 + Math.exp(-z));
+    for (let i = 0; i < x.length; i++) dot += model.coef[c][i] * x[i];
+    raw[c] = 1.0 / (1.0 + Math.exp(-(model.intercept[c] + dot)));
   }
   let total = 0.0;
-  for (const c of data.classes) total += raw[c];
-  const probability = {};
-  for (const c of data.classes) probability[c] = raw[c] / total;
-  return probability;
+  for (const c of model.classes) total += raw[c];
+  const prob = {};
+  for (const c of model.classes) prob[c] = raw[c] / total;
+  return prob;
 }
 
-function getSelected() {
-  const selected = new Set(Array.from(document.querySelectorAll('#domains input[type="checkbox"]:checked'),
-    (checkbox) => checkbox.value));
-  return names.filter((name) => selected.has(name)); // Preserve model/codebook order.
+// Named groups by descending probability; the residual group (Other) is kept apart and never ranked.
+function rankGroups(model, prob) {
+  const row = (c) => {
+    const cut = model.performance[c].cutoff;
+    return { cls: c, label: model.labels[c], p: prob[c], cut, over: prob[c] >= cut };
+  };
+  const main = model.classes.filter((c) => c !== OTHER_KEY).map(row).sort((a, b) => b.p - a.p);
+  const other = model.classes.includes(OTHER_KEY) ? row(OTHER_KEY) : null;
+  const over = (other ? [...main, other] : main).filter((r) => r.over).sort((a, b) => b.p - a.p);
+  const summary = over.length
+    ? `${over.length} of ${model.classes.length} groups at or above their cut-off: ${over.map((r) => r.label).join("; ")}.`
+    : "No group reaches its cut-off.";
+  return { main, other, summary };
 }
 
-function countHTML(picked) {
-  const n = picked.length;
-  let state = "Ready to compute.";
-  if (n === 0) state = `Select ${MIN_ITEMS} to ${MAX_ITEMS}.`;
-  else if (n < MIN_ITEMS) state = `Select ${MIN_ITEMS - n} more (minimum ${MIN_ITEMS}).`;
-  else if (n > MAX_ITEMS) state = `Remove ${n - MAX_ITEMS} (maximum ${MAX_ITEMS}).`;
-  let html = `<p class="cnt"><b>${n} selected</b> <span class="st">&middot; ${state}</span></p>`;
-  if (n > 0) {
-    const chosen = new Set(picked);
-    const lines = [];
-    for (const domain of domains) {
-      const subset = domain.names.filter((name) => chosen.has(name));
-      if (subset.length) {
-        lines.push(`<li><b>${escapeHTML(domain.label)}</b> <span>${subset.length} of ${domain.names.length}</span><br>${subset.map(escapeHTML).join("; ")}</li>`);
-      }
-    }
-    html += `<ul class="sel">${lines.join("")}</ul>`;
-  }
+function selectionState(n) {
+  if (n === 0) return `Select ${MIN_ITEMS} to ${MAX_ITEMS}.`;
+  if (n < MIN_ITEMS) return `Select ${MIN_ITEMS - n} more (minimum ${MIN_ITEMS}).`;
+  if (n > MAX_ITEMS) return `Remove ${n - MAX_ITEMS} (maximum ${MAX_ITEMS}).`;
+  return "Ready to compute.";
+}
+const isValidCount = (n) => n >= MIN_ITEMS && n <= MAX_ITEMS;
+
+// ---------------------------------------------------------------- rendering
+function countHTML(domains, picked) {
+  const chosen = new Set(picked);
+  let html = `<p class="cnt"><strong>${picked.length} selected</strong> <span class="muted">&middot; ${selectionState(picked.length)}</span></p>`;
+  const lines = domains.map((d) => {
+    const sel = d.names.filter((n) => chosen.has(n));
+    return sel.length
+      ? `<li><strong>${escapeHTML(d.label)}</strong> <span class="muted">${sel.length} of ${d.names.length}</span><br>${sel.map(escapeHTML).join("; ")}</li>`
+      : "";
+  }).join("");
+  if (lines) html += `<ul class="sel">${lines}</ul>`;
   return html;
 }
 
-function axisHeader() {
-  return '<div class="axis" aria-hidden="true">' + [0, 25, 50, 75, 100]
-    .map((tick) => `<span style="left:${tick}%">${tick}%</span>`).join("") + "</div>";
+function groupRowHTML(r) {
+  const kind = r.over ? "above" : "below";
+  const grid = GRID_TICKS.map((t) => `<i class="g" style="left:${t}%"></i>`).join("");
+  return `<tr class="${kind}" role="row"><th scope="row" role="rowheader">${escapeHTML(r.label)}</th>` +
+    `<td class="bar" role="cell"><div class="track" aria-hidden="true">${grid}` +
+    `<div class="fill ${kind}" style="width:${(100 * Math.min(r.p, 1)).toFixed(2)}%"></div>` +
+    `<div class="tick" style="left:${(100 * Math.min(r.cut, 1)).toFixed(2)}%"></div></div></td>` +
+    `<td class="num p" role="cell">${pct(r.p)}</td>` +
+    `<td class="num cut" role="cell" data-label="Cut-off">${pct(r.cut)}</td>` +
+    `<td class="status" role="cell"><span class="mk ${kind}" aria-hidden="true"></span>${r.over ? "At or above" : "Below"}</td></tr>`;
 }
 
-function resultRow(data, rank, cls, probability) {
-  const p = probability[cls];
-  const cut = data.performance[cls].cutoff;
-  const over = p >= cut; // Use unrounded values, as in app.py.
-  const kind = over ? "above" : "below";
-  const grid = [25, 50, 75].map((tick) => `<i class="g" style="left:${tick}%"></i>`).join("");
-  return `<tr class="${kind}"><td class="rk">${rank}</td><th scope="row">${escapeHTML(data.labels[cls])}</th>` +
-    `<td class="bar"><div class="track" aria-hidden="true">${grid}` +
-    `<div class="fill ${kind}" style="width:${(100 * Math.min(p, 1)).toFixed(2)}%"></div>` +
-    `<div class="tick" style="left:${(100 * Math.min(cut, 1)).toFixed(2)}%"></div></div></td>` +
-    `<td class="n v">${pct(p)}</td><td class="n">${pct(cut)}</td>` +
-    `<td class="st"><span class="mk ${kind}"></span>${over ? "At or above" : "Below"}</td></tr>`;
-}
-
-function renderResult(data, selectedNames) {
-  const valid = new Set(data.items.map((it) => it.name));
-  const picked = [...new Set(selectedNames.filter((name) => valid.has(name)))];
-  if (picked.length < MIN_ITEMS || picked.length > MAX_ITEMS) {
+function renderResult(model, selectedNames) {
+  const valid = new Set(model.items.map((it) => it.name));
+  const order = new Map(model.items.map((it, i) => [it.name, i]));
+  const picked = [...new Set(selectedNames.filter((n) => valid.has(n)))].sort((a, b) => order.get(a) - order.get(b));
+  if (!isValidCount(picked.length)) {
     return `<p class="hint">Select between ${MIN_ITEMS} and ${MAX_ITEMS} chief problems. You selected ${picked.length}.</p>`;
   }
-  const order = new Map(data.items.map((it, i) => [it.name, i]));
-  picked.sort((a, b) => order.get(a) - order.get(b));
-  const prob = calculateProbabilities(data, picked);
-  const sortedAll = [...data.classes].sort((a, b) => prob[b] - prob[a]);
-  const named = sortedAll.filter((cls) => cls !== OTHER_KEY);
-  const over = sortedAll.filter((cls) => prob[cls] >= data.performance[cls].cutoff);
-  const line = over.length
-    ? `${over.length} of ${data.classes.length} groups at or above their cut-off: ${over.map((cls) => data.labels[cls]).join("; ")}.`
-    : "No group reaches its cut-off.";
-
-  let html = '<p class="res-title">Result</p>' +
-    `<p class="echo"><b>Input (${picked.length}):</b> ${picked.map(escapeHTML).join("; ")}</p>` +
-    `<p class="summary">${escapeHTML(line)}</p>` +
-    '<div class="table-scroll" role="region" aria-label="Result table" tabindex="0">' +
-    '<table class="rt"><caption class="sr">Probability of each diagnostic group with its cut-off</caption>' +
-    '<thead><tr><th>#</th><th>Diagnostic group</th>' +
-    `<th class="axisth"><span class="sr">Probability scale, 0 to 100 percent</span>${axisHeader()}</th>` +
-    '<th class="n">Probability</th><th class="n">Cut-off</th><th style="padding-left:12px">Status</th>' +
-    '</tr></thead><tbody>';
-  named.forEach((cls, i) => { html += resultRow(data, i + 1, cls, prob); });
-  if (data.classes.includes(OTHER_KEY)) {
-    html += '<tr class="sep"><th colspan="6" scope="colgroup">Residual category, not ranked</th></tr>';
-    html += resultRow(data, "&ndash;", OTHER_KEY, prob);
+  const { main, other, summary } = rankGroups(model, probabilities(model, picked));
+  const axis = AXIS_TICKS.map((t) => `<span style="left:${t}%">${t}%</span>`).join("");
+  let html = `<p class="echo"><strong>Input (${picked.length}):</strong> ${picked.map(escapeHTML).join("; ")}</p>` +
+    `<p class="summary">${escapeHTML(summary)}</p>` +
+    '<table class="rt" role="table"><caption class="sr">Probability of each diagnostic group with its cut-off, highest first</caption>' +
+    '<thead><tr role="row"><th scope="col" role="columnheader">Diagnostic group</th>' +
+    `<th scope="col" role="columnheader" class="axisth"><span class="sr">Probability, 0 to 100 percent</span><div class="axis" aria-hidden="true">${axis}</div></th>` +
+    '<th scope="col" role="columnheader" class="num">Probability</th><th scope="col" role="columnheader" class="num">Cut-off</th>' +
+    '<th scope="col" role="columnheader">Status</th></tr></thead><tbody>' +
+    main.map(groupRowHTML).join("");
+  if (other) {
+    html += '<tr class="sep" role="row"><th colspan="5" scope="colgroup" role="columnheader">Residual category, not ranked</th></tr>' + groupRowHTML(other);
   }
-  html += '</tbody></table></div>' +
-    '<p class="legend"><span><i class="mk above"></i>At or above the group cut-off</span>' +
-    '<span><i class="mk below"></i>Below</span><span><i class="mk tk"></i>Group cut-off</span></p>' +
-    `<p class="fine">Probabilities are normalised to sum to 100% over the ${data.classes.length} groups. ` +
-    'Status compares unrounded values. Balanced class weights mean the probabilities do not reflect how common each group is.</p>';
-  if (data.classes.includes(OTHER_KEY)) {
-    html += `<p class="fine">${escapeHTML(OTHER_NOTE.replace("%d", data.performance[OTHER_KEY].n))}</p>`;
-  }
+  html += '</tbody></table>' +
+    '<p class="legend"><span><i class="mk above"></i>At or above cut-off</span><span><i class="mk below"></i>Below cut-off</span>' +
+    '<span><i class="mk tk"></i>Group cut-off</span></p>' +
+    `<p class="fine">Bars show probability on a 0 to 100% scale. Probabilities are normalised to sum to 100% over the ${model.classes.length} groups. ` +
+    'Status compares unrounded values. Class weights are balanced, so probabilities do not reflect how common each group is.</p>';
+  if (other) html += `<p class="fine">${escapeHTML(OTHER_NOTE.replace("%d", model.performance[OTHER_KEY].n))}</p>`;
   return html;
 }
 
-function renderModelInfo(data, domainList) {
-  const cv = data.cv;
-  const sorted = data.classes.filter((c) => c !== OTHER_KEY)
-    .sort((a, b) => data.performance[b].n - data.performance[a].n);
-  if (data.classes.includes(OTHER_KEY)) sorted.push(OTHER_KEY);
-  const rows = sorted.map((cls) => {
-    const p = data.performance[cls];
-    return `<tr${cls === OTHER_KEY ? ' class="resid"' : ""}><td>${escapeHTML(data.labels[cls])}</td>` +
-      `<td>${p.n}</td><td>${pct(p.prevalence)}</td><td>${p.auc.toFixed(3)}</td>` +
-      `<td>${pct(p.cutoff)}</td><td>${p.youden_j.toFixed(3)}</td></tr>`;
-  }).join("");
-  const dropped = Object.entries(data.dropped_groups).map(([key, n]) =>
-    `${escapeHTML(key.replaceAll("_", " "))} (n = ${n})`).join("; ");
-  return `<h3>Training set</h3><p>${data.n_patients} patients, ${data.classes.length} diagnostic groups, ` +
-    `${data.items.length} chief-problem items in ${domainList.length} codebook domains. ` +
-    'Model: L2-penalised logistic regression, one-vs-rest, balanced class weights. ' +
-    'The group probabilities are normalised to sum to 100%.</p>' +
-    '<h3>Performance and cut-off by group</h3>' +
-    '<div class="info-scroll"><table><thead><tr><th>Diagnostic group</th><th>n</th><th>Prevalence</th>' +
-    '<th>Out-of-fold AUC</th><th>Cut-off</th><th>Youden J</th></tr></thead><tbody>' +
-    rows + '</tbody></table></div>' +
-    '<h3>Cut-off definition</h3>' +
-    `<p>The cut-off of each group is the Youden point (maximum of sensitivity + specificity ` +
-    `- 1) of its out-of-fold ROC curve, from ${cv.splits}-fold stratified cross-validation ` +
-    `repeated ${cv.repeats} times (seed ${cv.seed}).</p>` +
-    '<h3>Groups left out</h3>' +
-    `<p>${dropped}: fewer than ${data.min_group_n} patients, so stratified cross-validation does not hold.</p>` +
-    '<h3>How this differs from the manuscript</h3>' +
-    `<p>The manuscript reports four diagnostic groups. This tool is refitted on all ${data.n_patients} ` +
-    `patients across ${data.classes.length} groups, so its coefficients and performance are not the manuscript's.</p>` +
-    '<h3>Limits</h3><ul><li>Internal validation only.</li>' +
-    '<li>Balanced class weights mean these probabilities do not reflect how common each group is in practice.</li>' +
-    '<li>This tool does not make a diagnosis.</li></ul>';
+function renderMeta(model) {
+  const items = [
+    ["Training set", `${model.n_patients.toLocaleString("en-US")} patients`],
+    ["Groups", String(model.classes.length)],
+    ["Items", String(model.items.length)],
+    ["Model date", model.generated]
+  ];
+  return items.map(([k, v]) => `<div><dt>${k}</dt><dd>${escapeHTML(v)}</dd></div>`).join("");
 }
 
-function renderUI(data, domainList) {
-  document.getElementById("model-meta").innerHTML =
-    `<div><dt>Model</dt><dd>refitted on ${data.n_patients} patients, ${data.classes.length} groups, ${data.items.length} items</dd></div>` +
-    `<div><dt>Generated</dt><dd>${escapeHTML(data.generated)}</dd></div>` +
-    `<div><dt>Diagnostic-group rule</dt><dd>${escapeHTML(data.dx_rule)}</dd></div>` +
-    `<div><dt>Citation</dt><dd>${escapeHTML(CITATION)}</dd></div>`;
+function renderModelInfo(model, domains) {
+  const cv = model.cv;
+  const order = model.classes.filter((c) => c !== OTHER_KEY).sort((a, b) => model.performance[b].n - model.performance[a].n);
+  if (model.classes.includes(OTHER_KEY)) order.push(OTHER_KEY);
+  const rows = order.map((c) => {
+    const p = model.performance[c];
+    return `<tr${c === OTHER_KEY ? ' class="resid"' : ""}><td>${escapeHTML(model.labels[c])}</td>` +
+      `<td data-label="n">${p.n}</td><td data-label="Prevalence">${pct(p.prevalence)}</td>` +
+      `<td data-label="AUC">${p.auc.toFixed(3)}</td><td data-label="Cut-off">${pct(p.cutoff)}</td>` +
+      `<td data-label="Youden J">${p.youden_j.toFixed(3)}</td></tr>`;
+  }).join("");
+  const dropped = Object.entries(model.dropped_groups)
+    .map(([k, n]) => `${escapeHTML(k.split("_").map((w, i) => (i ? w.toLowerCase() : w)).join("-"))} (n = ${n})`).join("; ");
+  return "<h3>Training set</h3>" +
+    `<p>${model.n_patients.toLocaleString("en-US")} patients, ${model.classes.length} diagnostic groups, ${model.items.length} chief-problem items in ${domains.length} codebook domains. ` +
+    "L2-penalised logistic regression, one-vs-rest, balanced class weights; group probabilities are normalised to sum to 100%.</p>" +
+    "<h3>Diagnostic groups</h3>" +
+    `<p>${escapeHTML(model.dx_rule)}.</p>` +
+    "<h3>Performance and cut-off by group</h3>" +
+    '<table class="info"><thead><tr><th>Diagnostic group</th><th>n</th><th>Prevalence</th><th>Out-of-fold AUC</th><th>Cut-off</th><th>Youden J</th></tr></thead>' +
+    `<tbody>${rows}</tbody></table>` +
+    "<h3>Cut-off definition</h3>" +
+    `<p>Youden point (maximum of sensitivity + specificity - 1) of the out-of-fold ROC curve of each group, from ${cv.splits}-fold stratified cross-validation repeated ${cv.repeats} times (seed ${cv.seed}).</p>` +
+    "<h3>Groups left out</h3>" +
+    `<p>${dropped}: fewer than ${model.min_group_n} patients, so stratified cross-validation does not hold.</p>` +
+    "<h3>Relation to the manuscript</h3>" +
+    `<p>${escapeHTML(model.note)} It is a separate model fitted for this tool, not a model of the manuscript analysis.</p>` +
+    "<h3>Limits</h3><ul><li>Internal validation only.</li>" +
+    "<li>Balanced class weights: probabilities do not reflect how common each group is in practice.</li></ul>";
+}
+
+// ---------------------------------------------------------------- page
+function initUI(model, domains) {
   const list = document.getElementById("domains");
-  list.replaceChildren();
-  for (const domain of domainList) {
+  const count = document.getElementById("count");
+  const panel = document.getElementById("panel");
+  const compute = document.getElementById("compute");
+  const getPicked = () => {
+    const on = new Set(Array.from(list.querySelectorAll("input:checked"), (c) => c.value));
+    return model.items.map((it) => it.name).filter((n) => on.has(n));
+  };
+
+  document.getElementById("model-meta").innerHTML = renderMeta(model);
+  document.getElementById("model-info").innerHTML = renderModelInfo(model, domains);
+
+  for (const d of domains) {
     const details = document.createElement("details");
     details.className = "dom";
     const summary = document.createElement("summary");
-    summary.textContent = `${domain.label} · ${domain.names.length} item${domain.names.length === 1 ? "" : "s"}`;
-    details.appendChild(summary);
+    const title = document.createElement("span");
+    title.textContent = d.label;
+    const meta = document.createElement("span");
+    meta.className = "muted";
+    meta.dataset.total = d.names.length;
+    meta.textContent = `${d.names.length} item${d.names.length === 1 ? "" : "s"}`;
+    summary.append(title, meta);
     const options = document.createElement("div");
     options.className = "options";
-    for (const name of domain.names) {
+    for (const name of d.names) {
       const label = document.createElement("label");
-      label.className = "option";
-      const checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      checkbox.value = name;
-      const span = document.createElement("span");
-      span.textContent = name;
-      label.append(checkbox, span);
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.value = name;
+      label.append(box, document.createTextNode(name));
       options.appendChild(label);
     }
-    details.appendChild(options);
+    details.append(summary, options);
     list.appendChild(details);
   }
-  document.getElementById("model-info").innerHTML = renderModelInfo(data, domainList);
-  const count = document.getElementById("count");
-  count.innerHTML = countHTML([]);
-  list.addEventListener("change", (event) => {
-    if (event.target.matches('input[type="checkbox"]')) count.innerHTML = countHTML(getSelected());
-  });
-  // Match Gradio: changing checkboxes updates the count, but NEVER recomputes results.
-  document.getElementById("compute").addEventListener("click", () => {
-    document.getElementById("panel").innerHTML = renderResult(data, getSelected());
-  });
+
+  const refresh = () => {
+    const picked = getPicked();
+    count.innerHTML = countHTML(domains, picked);
+    compute.disabled = !isValidCount(picked.length);
+    for (const details of list.querySelectorAll("details")) {
+      const k = details.querySelectorAll("input:checked").length;
+      const meta = details.querySelector("summary .muted");
+      const n = Number(meta.dataset.total);
+      meta.textContent = `${n} item${n === 1 ? "" : "s"}` + (k ? ` · ${k} selected` : "");
+    }
+  };
+  list.addEventListener("change", refresh);
+  compute.addEventListener("click", () => { panel.innerHTML = renderResult(model, getPicked()); });
   document.getElementById("reset").addEventListener("click", () => {
-    for (const checkbox of list.querySelectorAll('input[type="checkbox"]')) checkbox.checked = false;
-    count.innerHTML = countHTML([]);
-    document.getElementById("panel").innerHTML = HINT;
+    for (const box of list.querySelectorAll("input")) box.checked = false;
+    panel.innerHTML = HINT;
+    refresh();
   });
+  panel.innerHTML = HINT;
+  refresh();
 }
 
-async function initialize() {
+async function start() {
   const loading = document.getElementById("loading");
   try {
-    const [resModel, resDomains] = await Promise.all([
-      fetch("./model_all_groups.json"), fetch("./item_domains.json")
-    ]);
-    if (!resModel.ok || !resDomains.ok) {
-      throw new Error(`Could not load JSON (${resModel.status}, ${resDomains.status}).`);
-    }
-    const [data, domainData] = await Promise.all([resModel.json(), resDomains.json()]);
-    model = data;
-    names = model.items.map((it) => it.name);
-    domains = buildDomains(model, domainData);
-    renderUI(model, domains);
+    const [m, d] = await Promise.all([fetch("./model_all_groups.json"), fetch("./item_domains.json")]);
+    if (!m.ok || !d.ok) throw new Error(`HTTP ${m.status} / ${d.status}`);
+    const model = await m.json();
+    const domains = buildDomains(model, await d.json());
+    initUI(model, domains);
     loading.hidden = true;
     document.getElementById("tool-layout").hidden = false;
-  } catch (error) {
-    console.error("Unable to initialise the model:", error);
-    loading.classList.add("error");
-    loading.textContent = "Could not load the research model. Check that index.html, script.js, style.css and both JSON files are all uploaded to the same GitHub folder. " + error.message;
+  } catch (err) {
+    loading.className = "load-error";
+    loading.textContent = "The model files could not be loaded (" + err.message + "). " +
+      "Open the page through a web server, not from disk; for a local copy run: python -m http.server";
   }
 }
 
-// The core can also be checked against the original Python app with Node.js.
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { calculateProbabilities, renderResult, buildDomains, countHTML, renderModelInfo };
+  module.exports = { buildDomains, probabilities, rankGroups, renderResult, renderModelInfo, renderMeta, countHTML, selectionState, isValidCount };
 }
-if (typeof document !== "undefined") document.addEventListener("DOMContentLoaded", initialize);
+if (typeof document !== "undefined") document.addEventListener("DOMContentLoaded", start);
