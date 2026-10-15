@@ -1,4 +1,4 @@
-# Documentation of Criterion and Noncriterion Symptoms in the Chief Problems of Psychiatric Inpatients: A Baseline for Evaluating Language Model–Generated Records
+# Criterion and Noncriterion Symptoms in Psychiatric Records: A Baseline for LLM Evaluation
 
 ## Summary
 
